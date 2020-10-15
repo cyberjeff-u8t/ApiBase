@@ -10,7 +10,13 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
-
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Logging;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Authorization;
+using NSwag;
+using System.Linq;
+using NSwag.Generation.Processors.Security;
 
 namespace Api
 {
@@ -47,6 +53,63 @@ namespace Api
 
             services.AddControllers();
 
+            services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+
+            }).AddJwtBearer(o =>
+            {
+                o.Authority = "http://localhost:7000/auth/realms/cyberRealm";// Configuration["Jwt:Authority"];
+                o.Audience = "app-vue";// Configuration["Jwt:Audience"];
+                o.RequireHttpsMetadata = false;
+                o.TokenValidationParameters.ValidateAudience = false;
+                o.TokenValidationParameters.ValidateIssuer = false;
+                
+                o.Events = new JwtBearerEvents()
+                {
+                    OnAuthenticationFailed = c =>
+                    {
+                        c.NoResult();
+
+                        c.Response.StatusCode = 500;
+                        c.Response.ContentType = "text/plain";
+
+                        //if (env.IsDevelopment())
+                        //{
+                            return c.Response.WriteAsync(c.Exception.ToString());
+                        //}
+
+                        //return c.Response.WriteAsync("An error occured processing your authentication.");
+                    },
+
+                    OnForbidden = c =>
+                    {
+                        c.Response.StatusCode = 403;
+                        c.Response.ContentType = "text/plain";
+                        return c.Response.WriteAsync("Not authorized");
+                    }
+                    
+                };
+            });
+
+            services.AddAuthorization(options =>
+            {
+
+                var defaultAuthorizationPolicyBuilder = new AuthorizationPolicyBuilder(
+              JwtBearerDefaults.AuthenticationScheme);
+
+                defaultAuthorizationPolicyBuilder =
+                    defaultAuthorizationPolicyBuilder.RequireAuthenticatedUser();
+
+                options.DefaultPolicy = defaultAuthorizationPolicyBuilder.Build();
+
+                options.AddPolicy("test", policy => policy.RequireClaim("roles", "[test]"));
+                //options.AddPolicy("test", policy => policy.RequireRole("test"));
+            });
+
+
+            IdentityModelEventSource.ShowPII = true;
 
             services.AddApiVersioning(config =>
             {
@@ -70,6 +133,17 @@ namespace Api
                   
                   config.ApiGroupNames = new[] { "1.0" };
 
+                  config.AddSecurity("JWT", Enumerable.Empty<string>(), new NSwag.OpenApiSecurityScheme
+                  {
+                       Type = OpenApiSecuritySchemeType.ApiKey,
+                       Name = "Authorization",
+                       In = OpenApiSecurityApiKeyLocation.Header,
+                       Description = "Type into the textbox: Bearer {your JWT token}."
+                   });
+
+                  config.OperationProcessors.Add(
+                      new AspNetCoreOperationSecurityScopeProcessor("JWT"));
+              
                   config.PostProcess = document =>
                   {
                       document.Info.TermsOfService = "http://zzzz";
@@ -83,6 +157,7 @@ namespace Api
 
               });
 
+            
 
             services.AddOpenApiDocument(config =>
             {
@@ -114,7 +189,10 @@ namespace Api
 
             app.UseRouting();
 
+            
             app.UseAuthorization();
+
+            app.UseAuthentication();
 
             app.UseOpenApi();
             

@@ -6,9 +6,12 @@ using Microsoft.AspNetCore.Mvc;
 using System;
 using Api.ErrorHandling;
 using Newtonsoft.Json;
+using Microsoft.AspNetCore.Authorization;
 
 namespace Api.Base
 {
+    
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public abstract class BaseController<T> : ControllerBase where T : IBaseModel
@@ -24,8 +27,10 @@ namespace Api.Base
         public ActionResult<List<T>> Get() =>  _service.Get();
 
         [HttpGet("{id:length(24)}")]
+        [Authorize(Roles = "test")]
         [ProducesResponseType(StatusCodes.Status200OK)]
         [ProducesResponseType(typeof(NotFoundResponse), StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status403Forbidden)]
         public ActionResult<T> Get(string id)
         {
             var entity = _service.Get(id);
